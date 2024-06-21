@@ -1,16 +1,17 @@
 """Miscellaneous utility functions for metric calculation."""
 
-import logging
 import json
+import logging
 import os
+
 import numpy as np
 import pandas as pd
-
 
 LGR = logging.getLogger(__name__)
 LGR.setLevel(logging.INFO)
 
 from scipy import signal
+
 
 def print_metric_call(metric, args):
     """
@@ -102,7 +103,7 @@ def dolpfiltfilt(Fs, upperpass, inputdata, order, debug=False):
             len(inputdata),
             order,
         )
-    sos = signal.butter(order, 2.0 * upperpass, btype='lowpass', output='sos', fs=Fs)
+    sos = signal.butter(order, 2.0 * upperpass, btype="lowpass", output="sos", fs=Fs)
     return signal.sosfiltfilt(sos, inputdata).real
 
 
@@ -148,7 +149,7 @@ def dohpfiltfilt(Fs, lowerpass, inputdata, order, debug=False):
             len(inputdata),
             order,
         )
-    sos = signal.butter(order, 2.0 * lowerpass, btype="highpass", output='sos', fs=Fs)
+    sos = signal.butter(order, 2.0 * lowerpass, btype="highpass", output="sos", fs=Fs)
     return signal.sosfiltfilt(sos, inputdata).real
 
 
@@ -193,11 +194,16 @@ def dobpfiltfilt(Fs, lowerpass, upperpass, inputdata, order, debug=False):
     if lowerpass < 0.0:
         lowerpass = 0.0
     if debug:
-        print(f"dobpfiltfilt - {Fs=}, {lowerpass=}, {upperpass=}, {len(inputdata)=}, {order=}")
-    sos = signal.butter(order, [2.0 * lowerpass, 2.0 * upperpass], btype="bandpass", output='sos', fs=Fs)
+        print(
+            f"dobpfiltfilt - {Fs=}, {lowerpass=}, {upperpass=}, {len(inputdata)=}, {order=}"
+        )
+    sos = signal.butter(
+        order, [2.0 * lowerpass, 2.0 * upperpass], btype="bandpass", output="sos", fs=Fs
+    )
     if debug:
         print(sos)
     return signal.sosfiltfilt(sos, inputdata).real
+
 
 def readbidstsv(inputfilename, colspec=None, warn=True, debug=False):
     r"""Read time series out of a BIDS tsv file
@@ -265,7 +271,9 @@ def readbidstsv(inputfilename, colspec=None, warn=True, debug=False):
                 columns = d["Columns"]
             except:
                 if debug:
-                    print("no columns found in json, will take labels from the tsv file")
+                    print(
+                        "no columns found in json, will take labels from the tsv file"
+                    )
                 columns = None
                 if warn:
                     print(
@@ -363,4 +371,35 @@ def readbidstsv(inputfilename, colspec=None, warn=True, debug=False):
         return [None, None, None, None, None, None]
 
 
+hammingwindows = {}
 
+
+def hamming(length, debug=False):
+    #   return 0.54 - 0.46 * np.cos((np.arange(0.0, float(length), 1.0) / float(length)) * 2.0 * np.pi)
+    r"""Returns a Hamming window function of the specified length.  Once calculated, windows
+    are cached for speed.
+
+    Parameters
+    ----------
+    length : int
+        The length of the window function
+        :param length:
+
+    debug : boolean, optional
+        When True, internal states of the function will be printed to help debugging.
+        :param debug:
+
+    Returns
+    -------
+    windowfunc : 1D float array
+        The window function
+    """
+    try:
+        return hammingwindows[str(length)]
+    except KeyError:
+        hammingwindows[str(length)] = 0.54 - 0.46 * np.cos(
+            (np.arange(0.0, float(length), 1.0) / float(length)) * 2.0 * np.pi
+        )
+        if debug:
+            print("initialized hamming window for length", length)
+        return hammingwindows[str(length)]

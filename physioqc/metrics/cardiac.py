@@ -1,11 +1,12 @@
 """Denoising metrics for cardio recordings."""
 
 import numpy as np
-from scipy.stats import kurtosis, skew
 from numpy.polynomial import Polynomial
+from scipy.stats import kurtosis, skew
 
 from .. import references
 from ..due import due
+from .utils import physio_or_numpy
 
 
 def trendgen(thexvals, thefitcoffs, demean):
@@ -64,7 +65,6 @@ def detrend(inputdata, order=1, demean=False):
     return inputdata - thefittc
 
 
-
 def calcplethskeqwness(
     waveform,
     Fs,
@@ -101,6 +101,9 @@ def calcplethskeqwness(
     Calculates the windowed skewness quality metric described in Elgendi, M. in
     "Optimal Signal Quality Index for Photoplethysmogram Signals". Bioengineering 2016, Vol. 3, Page 21 3, 21 (2016).
     """
+
+    waveform = physio_or_numpy(waveform)
+
     # detrend the waveform
     dt_waveform = detrend(waveform, order=detrendorder, demean=True)
 
@@ -120,6 +123,7 @@ def calcplethskeqwness(
     S_sqi_std = np.std(S_waveform)
 
     return S_sqi_mean, S_sqi_std, S_waveform
+
 
 def calcplethkurtosis(
     waveform,
@@ -156,6 +160,8 @@ def calcplethkurtosis(
     Calculates the windowed kurtosis quality metric described in Elgendi, M. in
     "Optimal Signal Quality Index for Photoplethysmogram Signals". Bioengineering 2016, Vol. 3, Page 21 3, 21 (2016).
     """
+    waveform = physio_or_numpy(waveform)
+
     # detrend the waveform
     dt_waveform = detrend(waveform, order=detrendorder, demean=True)
 
@@ -183,12 +189,16 @@ def approximateentropy(waveform, m, r):
 
     def _phi(m):
         x = [[waveform[j] for j in range(i, i + m - 1 + 1)] for i in range(N - m + 1)]
-        C = [len([1 for x_j in x if _maxdist(x_i, x_j) <= r]) / (N - m + 1.0) for x_i in x]
+        C = [
+            len([1 for x_j in x if _maxdist(x_i, x_j) <= r]) / (N - m + 1.0)
+            for x_i in x
+        ]
         return (N - m + 1.0) ** (-1) * sum(np.log(C))
 
     N = len(waveform)
 
     return abs(_phi(m + 1) - _phi(m))
+
 
 def calcplethentropy(
     waveform,
@@ -225,6 +235,8 @@ def calcplethentropy(
     Calculates the windowed entropy quality metric described in Elgendi, M. in
     "Optimal Signal Quality Index for Photoplethysmogram Signals". Bioengineering 2016, Vol. 3, Page 21 3, 21 (2016).
     """
+    waveform = physio_or_numpy(waveform)
+
     # detrend the waveform
     dt_waveform = detrend(waveform, order=detrendorder, demean=True)
 

@@ -1,17 +1,25 @@
 """Denoising metrics for chest belt recordings."""
 
-import numpy as np
-from .utils import dobpfiltfilt, dolpfiltfilt
 import matplotlib.pyplot as plt
+import numpy as np
+from peakdet import operations
+from scipy.signal import resample, welch
+from scipy.stats import pearsonr
 
 from .. import references
 from ..due import due
+from .utils import dobpfiltfilt, dolpfiltfilt, hamming, physio_or_numpy
 
 
-def respirationprefilter(rawresp, Fs, lowerpass=0.01, upperpass=2.0, order=1, debug=False):
+def respirationprefilter(
+    rawresp, Fs, lowerpass=0.01, upperpass=2.0, order=1, debug=False
+):
     if debug:
-        print(f"respirationprefilter: Fs={Fs} order={order}, lowerpass={lowerpass}, upperpass={upperpass}")
+        print(
+            f"respirationprefilter: Fs={Fs} order={order}, lowerpass={lowerpass}, upperpass={upperpass}"
+        )
     return dobpfiltfilt(Fs, lowerpass, upperpass, rawresp, order, debug=debug)
+
 
 def respenvelopefilter(squarevals, Fs, upperpass=0.1, order=8, debug=False):
     if debug:
@@ -23,6 +31,15 @@ def respiratorysqi(rawresp, Fs, debug=False):
     """Implementation of Romano's method from A Signal Quality Index for Improving the Estimation of
     Breath-by-Breath Respiratory Rate During Sport and Exercise,
     IEEE SENSORS JOURNAL, VOL. 23, NO. 24, 15 DECEMBER 2023"""
+
+    rawresp = physio_or_numpy(rawresp)
+
+    # get the sample frequency down to around 25 Hz for respiratory waveforms
+    if Fs > 25.0:
+        dsfac = int(Fs / 25.0)
+        print(f"downsampling by a factor of {dsfac}")
+        rawresp = rawresp[::dsfac] + 0.0
+        Fs /= dsfac
 
     # A. Signal Preprocessing
     # Apply first order Butterworth bandpass, 0.01-2Hz
@@ -36,10 +53,6 @@ def respiratorysqi(rawresp, Fs, debug=False):
 
     # calculate the derivative
     derivative = np.gradient(prefiltered, 1.0 / Fs)
-    if debug:
-        plt.plot(prefiltered)
-        plt.plot(derivative)
-        plt.show()
 
     # normalize the derivative to the range of ~-1 to 1
     derivmax = np.max(derivative)
@@ -53,9 +66,13 @@ def respiratorysqi(rawresp, Fs, debug=False):
         plt.show()
 
     # amplitude correct by flattening the envelope function
-    esuperior = 2.0 * respenvelopefilter(np.square(np.where(normderiv > 0.0, normderiv, 0.0)), Fs)
+    esuperior = 2.0 * respenvelopefilter(
+        np.square(np.where(normderiv > 0.0, normderiv, 0.0)), Fs
+    )
     esuperior = np.sqrt(np.where(esuperior > 0.0, esuperior, 0.0))
-    einferior = 2.0 * respenvelopefilter(np.square(np.where(normderiv < 0.0, normderiv, 0.0)), Fs)
+    einferior = 2.0 * respenvelopefilter(
+        np.square(np.where(normderiv < 0.0, normderiv, 0.0)), Fs
+    )
     einferior = np.sqrt(np.where(einferior > 0.0, einferior, 0.0))
     if debug:
         plt.plot(normderiv)
@@ -69,22 +86,141 @@ def respiratorysqi(rawresp, Fs, debug=False):
 
     # B. Detection of breaths in sliding window
     seglength = 12.0
-    segsamples = seglength * Fs
+    segsamples = int(seglength * Fs)
     segstep = 2.0
-    stepsamples = segstep * Fs
+    stepsamples = int(segstep * Fs)
     totaltclength = len(rawresp)
-    numsegs = int(totaltclength // segsamples)
-
-    if totaltclength % segsamples != 0:
+    numsegs = int((totaltclength - segsamples) // stepsamples)
+    if (totaltclength - segsamples) % segsamples != 0:
         numsegs += 1
-
+    peakfreqs = np.zeros((numsegs), dtype=np.float64)
+    respfilteredderivs = rmsnormderiv * 0.0
+    respfilteredweights = rmsnormderiv * 0.0
+    for i in range(numsegs):
+        if i < numsegs - 1:
+            segstart = i * stepsamples
+            segend = segstart + segsamples
+        else:
+            segstart = len(rawresp) - segsamples
+            segend = segstart + segsamples
+        segment = rmsnormderiv[segstart:segend] + 0.0
+        segment *= hamming(segsamples)
+        segment -= np.mean(segment)
+        if False:
+            thex, they = welch(segment, Fs, nperseg=2048)
+        else:
+            thex, they = welch(segment, Fs, nfft=4096)
+        peakfreqs[i] = thex[np.argmax(they)]
+        respfilterpctwidth = 10.0
+        respfilterorder = 1
+        lowerfac = 1.0 - respfilterpctwidth / 200.0
+        upperfac = 1.0 + respfilterpctwidth / 200.0
+        lowerpass = peakfreqs[i] * lowerfac
+        upperpass = peakfreqs[i] * upperfac
+        if debug:
+            print(peakfreqs[i], lowerfac, lowerpass, upperfac, upperpass)
+        filteredsegment = dolpfiltfilt(
+            Fs, upperpass, segment, respfilterorder, debug=False
+        )
+        filteredsegment -= np.mean(filteredsegment)
+        if i < numsegs - 1:
+            respfilteredderivs[
+                i * stepsamples : (i * stepsamples) + segsamples
+            ] += filteredsegment
+            respfilteredweights[i * stepsamples : (i * stepsamples) + segsamples] += 1.0
+        else:
+            respfilteredderivs[-segsamples:] += filteredsegment
+            respfilteredweights[-segsamples:] += 1.0
+    respfilteredderivs /= respfilteredweights
+    respfilteredderivs /= np.std(respfilteredderivs)
+    if debug:
+        print(peakfreqs)
+        plt.plot(rmsnormderiv)
+        plt.plot(respfilteredderivs)
+        plt.show()
 
     # C. Breaths segmentation
+    peakinfo = operations.peakfind_physio(respfilteredderivs, thresh=0.1, dist=100)
+    if debug:
+        ax = operations.plot_physio(peakinfo)
+        plt.show()
+    thepeaks = peakinfo.peaks
 
     # D. Similarity Analysis and Exclusion of Unreliable Breaths
+    numbreaths = len(thepeaks) - 1
+    scaledpeaklength = 100
+    thescaledbreaths = np.zeros((numbreaths, scaledpeaklength), dtype=np.float64)
+    thebreathlocs = np.zeros((numbreaths), dtype=np.float64)
+    thebreathcorrs = np.zeros((numbreaths), dtype=np.float64)
+    breathlist = []
+    for thisbreath in range(numbreaths):
+        breathinfo = {}
+        startpt = thepeaks[thisbreath]
+        endpt = thepeaks[thisbreath + 1]
+        thebreathlocs[thisbreath] = (endpt + startpt) / (Fs * 2.0)
+        breathinfo["starttime"] = startpt / Fs
+        breathinfo["endtime"] = endpt / Fs
+        breathinfo["centertime"] = thebreathlocs[thisbreath]
+        thescaledbreaths[thisbreath, :] = resample(
+            respfilteredderivs[startpt:endpt], scaledpeaklength
+        )
+        thescaledbreaths[thisbreath, :] -= np.min(thescaledbreaths[thisbreath, :])
+        thescaledbreaths[thisbreath, :] /= np.max(thescaledbreaths[thisbreath, :])
+        breathlist.append(breathinfo)
+    averagebreath = np.mean(thescaledbreaths, axis=0)
+    for thisbreath in range(numbreaths):
+        thebreathcorrs[thisbreath] = pearsonr(
+            averagebreath, thescaledbreaths[thisbreath, :]
+        ).statistic
+        breathlist[thisbreath]["correlation"] = thebreathcorrs[thisbreath]
+
+    # set up the color codes
+    color_0p9 = "#888888"
+    color_0p8 = "#888800"
+    color_0p7 = "#aa4400"
+    color_bad = "#ff0000"
+
+    # plot the breath correlations, with lines indicating thresholds
+    plt.plot(thebreathlocs, thebreathcorrs, ls="-", marker="o")
+    plt.hlines(
+        [0.9, 0.8, 0.7, 0.6],
+        0.0,
+        len(rawresp) / Fs,
+        colors=[color_0p9, color_0p8, color_0p7, color_bad],
+        linestyles="solid",
+        label=["th=0.9", "th=0.8", "th=0.7", "th=0.6"],
+    )
+    plt.title("Quality evaluation for each breath")
+    plt.show()
+
+    # now plot the respiratory waveform, color coded for quality
+    for thisbreath in range(numbreaths):
+        if thebreathcorrs[thisbreath] > 0.9:
+            thecolor = color_0p9
+        elif thebreathcorrs[thisbreath] > 0.8:
+            thecolor = color_0p8
+        elif thebreathcorrs[thisbreath] > 0.7:
+            thecolor = color_0p7
+        else:
+            thecolor = color_bad
+        startpt = thepeaks[thisbreath]
+        endpt = thepeaks[thisbreath + 1]
+        if endpt == len(rawresp) - 1:
+            endpt -= 1
+        xvals = np.linspace(
+            startpt / Fs, (endpt + 1) / Fs, endpt - startpt + 1, endpoint=False
+        )
+        yvals = rawresp[startpt : endpt + 1]
+        plt.plot(xvals, yvals, color=thecolor)
+    plt.title("Respiratory waveform, color coded by quantifiability")
+    plt.show()
+
+    for thisbreath in range(numbreaths):
+        thebreathinfo = breathlist[thisbreath]
+        print(
+            f"{thisbreath},{thebreathinfo['starttime']},{thebreathinfo['endtime']},{thebreathinfo['centertime']},{thebreathinfo['correlation']}"
+        )
 
     # E. Breath-by-Breath RR Assessment
 
-    return normderiv
-
-
+    return respfilteredderivs
