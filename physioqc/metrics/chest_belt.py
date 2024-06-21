@@ -27,6 +27,7 @@ def respenvelopefilter(squarevals, Fs, upperpass=0.1, order=8, debug=False):
     return butterlpfiltfilt(Fs, upperpass, squarevals, order, debug=debug)
 
 
+@due.dcite(references.ROMANO_2023)
 def respiratorysqi(rawresp, Fs, debug=False):
     """Implementation of Romano's method from A Signal Quality Index for Improving the Estimation of
     Breath-by-Breath Respiratory Rate During Sport and Exercise,

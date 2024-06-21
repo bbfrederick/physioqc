@@ -64,7 +64,7 @@ def detrend(inputdata, order=1, demean=False):
     thefittc = trendgen(thetimepoints, thecoffs, demean)
     return inputdata - thefittc
 
-
+@due.dcite(references.ELGENDI_2016)
 def calcplethskeqwness(
     waveform,
     Fs,
@@ -124,7 +124,7 @@ def calcplethskeqwness(
 
     return S_sqi_mean, S_sqi_std, S_waveform
 
-
+@due.dcite(references.ELGENDI_2016)
 def calcplethkurtosis(
     waveform,
     Fs,
@@ -199,7 +199,7 @@ def approximateentropy(waveform, m, r):
 
     return abs(_phi(m + 1) - _phi(m))
 
-
+@due.dcite(references.ELGENDI_2016)
 def calcplethentropy(
     waveform,
     Fs,
