@@ -133,3 +133,8 @@ dmypy.json
 
 # Pyre type checker
 .pyre/
+
+# mac desktop files
+.DS_Store
+*/.DS_Store
+*/*/.DS_Store

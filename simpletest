@@ -1,0 +1,14 @@
+#!/usr/bin/env python
+
+import peakdet.io as pk_io
+import physioqc.metrics.utils as utils
+import physioqc.metrics.chest_belt as chest_belt
+import numpy as np
+
+samplerate, starttime, columns, data, compression, columnsource = utils.readbidstsv("testdata/sub-007_ses-05_task-rest_run-01_physio.tsv.gz", colspec="respiratory_effort")
+
+respraw = np.nan_to_num(data.flatten())
+
+print(respraw)
+
+normderiv = chest_belt.respiratorysqi(respraw, samplerate, debug=False)
