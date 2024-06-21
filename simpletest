@@ -10,8 +10,11 @@ samplerate, starttime, columns, data, compression, columnsource = \
     utils.readbidstsv("testdata/sub-007_ses-05_task-rest_run-01_physio.tsv.gz",
                       colspec="respiratory_effort")
 
-respraw = np.nan_to_num(data.flatten())
+rawresp = np.nan_to_num(data.flatten())
 
-print(respraw)
+print(rawresp)
 
-normderiv = chest_belt.respiratorysqi(respraw, samplerate, debug=False)
+breathlist = chest_belt.respiratorysqi(rawresp, samplerate, debug=False)
+chest_belt.plotbreathqualities(breathlist, totaltime=(len(rawresp) / samplerate))
+chest_belt.plotbreathwaveformwithquality(rawresp, breathlist, samplerate)
+chest_belt.summarizebreaths(breathlist)

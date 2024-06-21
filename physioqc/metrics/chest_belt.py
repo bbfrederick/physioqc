@@ -8,7 +8,7 @@ from scipy.stats import pearsonr
 
 from .. import references
 from ..due import due
-from .utils import dobpfiltfilt, dolpfiltfilt, hamming, physio_or_numpy
+from .utils import butterbpfiltfilt, butterlpfiltfilt, hamming, physio_or_numpy
 
 
 def respirationprefilter(
@@ -18,13 +18,13 @@ def respirationprefilter(
         print(
             f"respirationprefilter: Fs={Fs} order={order}, lowerpass={lowerpass}, upperpass={upperpass}"
         )
-    return dobpfiltfilt(Fs, lowerpass, upperpass, rawresp, order, debug=debug)
+    return butterbpfiltfilt(Fs, lowerpass, upperpass, rawresp, order, debug=debug)
 
 
 def respenvelopefilter(squarevals, Fs, upperpass=0.1, order=8, debug=False):
     if debug:
         print(f"respenvelopefilter: Fs={Fs} order={order}, upperpass={upperpass}")
-    return dolpfiltfilt(Fs, upperpass, squarevals, order, debug=debug)
+    return butterlpfiltfilt(Fs, upperpass, squarevals, order, debug=debug)
 
 
 def respiratorysqi(rawresp, Fs, debug=False):
@@ -119,7 +119,7 @@ def respiratorysqi(rawresp, Fs, debug=False):
         upperpass = peakfreqs[i] * upperfac
         if debug:
             print(peakfreqs[i], lowerfac, lowerpass, upperfac, upperpass)
-        filteredsegment = dolpfiltfilt(
+        filteredsegment = butterlpfiltfilt(
             Fs, upperpass, segment, respfilterorder, debug=False
         )
         filteredsegment -= np.mean(filteredsegment)
@@ -174,26 +174,59 @@ def respiratorysqi(rawresp, Fs, debug=False):
         ).statistic
         breathlist[thisbreath]["correlation"] = thebreathcorrs[thisbreath]
 
+    return breathlist
+
+def plotbreathqualities(breathlist, totaltime=None):
     # set up the color codes
     color_0p9 = "#888888"
-    color_0p8 = "#888800"
-    color_0p7 = "#aa4400"
+    color_0p8 = "#aa6666"
+    color_0p7 = "#cc4444"
     color_bad = "#ff0000"
+
+    if totaltime is None:
+        totaltime = breathlist[-1]["endtime"]
+
+    # unpack the breath information
+    numbreaths = len(breathlist)
+    thebreathlocs = np.zeros((numbreaths), dtype=np.float64)
+    thebreathcorrs = np.zeros((numbreaths), dtype=np.float64)
+    for thisbreath in range(numbreaths):
+        thebreathlocs[thisbreath] = breathlist[thisbreath]["centertime"]
+        thebreathcorrs[thisbreath] = breathlist[thisbreath]["correlation"]
 
     # plot the breath correlations, with lines indicating thresholds
     plt.plot(thebreathlocs, thebreathcorrs, ls="-", marker="o")
     plt.hlines(
         [0.9, 0.8, 0.7, 0.6],
         0.0,
-        len(rawresp) / Fs,
+        totaltime,
         colors=[color_0p9, color_0p8, color_0p7, color_bad],
         linestyles="solid",
         label=["th=0.9", "th=0.8", "th=0.7", "th=0.6"],
     )
     plt.title("Quality evaluation for each breath")
+    plt.xlabel("Time in seconds")
+    plt.ylabel("Correlation with average breath")
+    plt.xlim([0, totaltime])
+    plt.ylim([0, 1.05])
     plt.show()
 
+def plotbreathwaveformwithquality(waveform, breathlist, Fs):
     # now plot the respiratory waveform, color coded for quality
+
+    # set up the color codes
+    color_0p9 = "#888888"
+    color_0p8 = "#aa6666"
+    color_0p7 = "#cc4444"
+    color_bad = "#ff0000"
+
+    # unpack the breath information
+    numbreaths = len(breathlist)
+    thebreathlocs = np.zeros((numbreaths), dtype=np.float64)
+    thebreathcorrs = np.zeros((numbreaths), dtype=np.float64)
+    for thisbreath in range(numbreaths):
+        thebreathlocs[thisbreath] = breathlist[thisbreath]["centertime"]
+        thebreathcorrs[thisbreath] = breathlist[thisbreath]["correlation"]
     for thisbreath in range(numbreaths):
         if thebreathcorrs[thisbreath] > 0.9:
             thecolor = color_0p9
@@ -203,24 +236,27 @@ def respiratorysqi(rawresp, Fs, debug=False):
             thecolor = color_0p7
         else:
             thecolor = color_bad
-        startpt = thepeaks[thisbreath]
-        endpt = thepeaks[thisbreath + 1]
-        if endpt == len(rawresp) - 1:
+        startpt = int(breathlist[thisbreath]["starttime"] * Fs)
+        endpt = int(breathlist[thisbreath]["endtime"] * Fs)
+        if endpt == len(waveform) - 1:
             endpt -= 1
         xvals = np.linspace(
             startpt / Fs, (endpt + 1) / Fs, endpt - startpt + 1, endpoint=False
         )
-        yvals = rawresp[startpt : endpt + 1]
+        yvals = waveform[startpt : endpt + 1]
         plt.plot(xvals, yvals, color=thecolor)
     plt.title("Respiratory waveform, color coded by quantifiability")
+    plt.xlabel("Time in seconds")
+    plt.ylabel("Amplitude (arbitrary units)")
+    plt.xlim([0.0, len(waveform) / Fs])
     plt.show()
 
+def summarizebreaths(breathlist):
+    numbreaths = len(breathlist)
     for thisbreath in range(numbreaths):
         thebreathinfo = breathlist[thisbreath]
         print(
             f"{thisbreath},{thebreathinfo['starttime']},{thebreathinfo['endtime']},{thebreathinfo['centertime']},{thebreathinfo['correlation']}"
         )
 
-    # E. Breath-by-Breath RR Assessment
 
-    return respfilteredderivs

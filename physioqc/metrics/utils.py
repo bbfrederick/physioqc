@@ -61,7 +61,7 @@ def physio_or_numpy(signal):
 
 # - butterworth filters
 # @conditionaljit()
-def dolpfiltfilt(Fs, upperpass, inputdata, order, debug=False):
+def butterlpfiltfilt(Fs, upperpass, inputdata, order, debug=False):
     r"""Performs a bidirectional (zero phase) Butterworth lowpass filter on an input vector
     and returns the result.  Ends are padded to reduce transients.
 
@@ -97,7 +97,7 @@ def dolpfiltfilt(Fs, upperpass, inputdata, order, debug=False):
         upperpass = Fs / 2.0
     if debug:
         print(
-            "dolpfiltfilt - Fs, upperpass, len(inputdata), order:",
+            "butterlpfiltfilt - Fs, upperpass, len(inputdata), order:",
             Fs,
             upperpass,
             len(inputdata),
@@ -108,7 +108,7 @@ def dolpfiltfilt(Fs, upperpass, inputdata, order, debug=False):
 
 
 # @conditionaljit()
-def dohpfiltfilt(Fs, lowerpass, inputdata, order, debug=False):
+def butterhpfiltfilt(Fs, lowerpass, inputdata, order, debug=False):
     r"""Performs a bidirectional (zero phase) Butterworth highpass filter on an input vector
     and returns the result.  Ends are padded to reduce transients.
 
@@ -143,7 +143,7 @@ def dohpfiltfilt(Fs, lowerpass, inputdata, order, debug=False):
         lowerpass = 0.0
     if debug:
         print(
-            "dohpfiltfilt - Fs, lowerpass, len(inputdata), order:",
+            "butterhpfiltfilt - Fs, lowerpass, len(inputdata), order:",
             Fs,
             lowerpass,
             len(inputdata),
@@ -154,7 +154,7 @@ def dohpfiltfilt(Fs, lowerpass, inputdata, order, debug=False):
 
 
 # @conditionaljit()
-def dobpfiltfilt(Fs, lowerpass, upperpass, inputdata, order, debug=False):
+def butterbpfiltfilt(Fs, lowerpass, upperpass, inputdata, order, debug=False):
     r"""Performs a bidirectional (zero phase) Butterworth bandpass filter on an input vector
     and returns the result.  Ends are padded to reduce transients.
 
@@ -195,7 +195,7 @@ def dobpfiltfilt(Fs, lowerpass, upperpass, inputdata, order, debug=False):
         lowerpass = 0.0
     if debug:
         print(
-            f"dobpfiltfilt - {Fs=}, {lowerpass=}, {upperpass=}, {len(inputdata)=}, {order=}"
+            f"butterbpfiltfilt - {Fs=}, {lowerpass=}, {upperpass=}, {len(inputdata)=}, {order=}"
         )
     sos = signal.butter(
         order, [2.0 * lowerpass, 2.0 * upperpass], btype="bandpass", output="sos", fs=Fs
