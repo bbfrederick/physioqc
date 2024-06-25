@@ -14,7 +14,7 @@ rawresp = np.nan_to_num(data.flatten())
 
 print(rawresp)
 
-breathlist = chest_belt.respiratorysqi(rawresp, samplerate, debug=False)
+breathlist = chest_belt.respiratorysqi(rawresp, samplerate, debug=True)
 chest_belt.plotbreathqualities(breathlist, totaltime=(len(rawresp) / samplerate))
 chest_belt.plotbreathwaveformwithquality(rawresp, breathlist, samplerate)
 chest_belt.summarizebreaths(breathlist)
