@@ -1,6 +1,7 @@
 """Denoising metrics for chest belt recordings."""
 
 import matplotlib.pyplot as plt
+from matplotlib.patches import Polygon
 import numpy as np
 from peakdet import operations
 from scipy.signal import resample, welch
@@ -19,7 +20,7 @@ def respirationprefilter(
             f"respirationprefilter: Fs={Fs} order={order}, lowerpass={lowerpass}, upperpass={upperpass}"
         )
     return butterbpfiltfilt(Fs, lowerpass, upperpass, rawresp, order, debug=debug)
-
+    #return operations.filter_physio(rawresp, cutoffs=[lowerpass, upperpass], method='bandpass')
 
 def respenvelopefilter(squarevals, Fs, upperpass=0.1, order=8, debug=False):
     if debug:
@@ -36,8 +37,9 @@ def respiratorysqi(rawresp, Fs, debug=False):
     rawresp = physio_or_numpy(rawresp)
 
     # get the sample frequency down to around 25 Hz for respiratory waveforms
-    if Fs > 25.0:
-        dsfac = int(Fs / 25.0)
+    targetfreq = 25.0
+    if Fs > targetfreq:
+        dsfac = int(Fs / targetfreq)
         print(f"downsampling by a factor of {dsfac}")
         rawresp = rawresp[::dsfac] + 0.0
         Fs /= dsfac
@@ -107,10 +109,7 @@ def respiratorysqi(rawresp, Fs, debug=False):
         segment = rmsnormderiv[segstart:segend] + 0.0
         segment *= hamming(segsamples)
         segment -= np.mean(segment)
-        if False:
-            thex, they = welch(segment, Fs, nperseg=2048)
-        else:
-            thex, they = welch(segment, Fs, nfft=4096)
+        thex, they = welch(segment, Fs, nfft=4096)
         peakfreqs[i] = thex[np.argmax(they)]
         respfilterpctwidth = 10.0
         respfilterorder = 1
@@ -141,7 +140,10 @@ def respiratorysqi(rawresp, Fs, debug=False):
         plt.show()
 
     # C. Breaths segmentation
-    peakinfo = operations.peakfind_physio(respfilteredderivs, thresh=0.1, dist=100)
+    # The fastest credible breathing rate is 20 breaths/min -> 3 seconds/breath, so set the dist to be 50%
+    # of that in points
+    thedist = int((3.0 * Fs) / 2.0)
+    peakinfo = operations.peakfind_physio(respfilteredderivs, thresh=0.05, dist=thedist)
     if debug:
         ax = operations.plot_physio(peakinfo)
         plt.show()
@@ -168,13 +170,17 @@ def respiratorysqi(rawresp, Fs, debug=False):
         thescaledbreaths[thisbreath, :] -= np.min(thescaledbreaths[thisbreath, :])
         thescaledbreaths[thisbreath, :] /= np.max(thescaledbreaths[thisbreath, :])
         breathlist.append(breathinfo)
+        if debug:
+            plt.plot(thescaledbreaths[thisbreath, :], lw=0.1, color='#888888')
     averagebreath = np.mean(thescaledbreaths, axis=0)
+    if debug:
+        plt.plot(averagebreath, lw=2, color='black')
+        plt.show()
     for thisbreath in range(numbreaths):
         thebreathcorrs[thisbreath] = pearsonr(
             averagebreath, thescaledbreaths[thisbreath, :]
         ).statistic
         breathlist[thisbreath]["correlation"] = thebreathcorrs[thisbreath]
-
     return breathlist
 
 def plotbreathqualities(breathlist, totaltime=None):
@@ -212,14 +218,14 @@ def plotbreathqualities(breathlist, totaltime=None):
     plt.ylim([0, 1.05])
     plt.show()
 
-def plotbreathwaveformwithquality(waveform, breathlist, Fs):
+def plotbreathwaveformwithquality(waveform, breathlist, Fs, plottype="rectangle"):
     # now plot the respiratory waveform, color coded for quality
 
     # set up the color codes
-    color_0p9 = "#888888"
-    color_0p8 = "#aa6666"
-    color_0p7 = "#cc4444"
-    color_bad = "#ff0000"
+    color_0p9 = "#ff000000"
+    color_0p8 = "#ff000044"
+    color_0p7 = "#ff000088"
+    color_bad = "#ff0000aa"
 
     # unpack the breath information
     numbreaths = len(breathlist)
@@ -228,6 +234,20 @@ def plotbreathwaveformwithquality(waveform, breathlist, Fs):
     for thisbreath in range(numbreaths):
         thebreathlocs[thisbreath] = breathlist[thisbreath]["centertime"]
         thebreathcorrs[thisbreath] = breathlist[thisbreath]["correlation"]
+
+    # initialize the plot
+    fig = plt.figure()
+    ax = fig.add_subplot(111)
+
+    # plot the whole line if we're doing rectangle occlusion
+    if plottype == "rectangle":
+        xvals = np.linspace(
+            0.0, len(waveform) / Fs, len(waveform), endpoint=False
+        )
+        plt.plot(xvals, waveform, color="black")
+    yrange = np.max(waveform) - np.min(waveform)
+    ymax = np.min(waveform) + yrange * 1.05
+    ymin = np.max(waveform) - yrange * 1.05
     for thisbreath in range(numbreaths):
         if thebreathcorrs[thisbreath] > 0.9:
             thecolor = color_0p9
@@ -239,13 +259,23 @@ def plotbreathwaveformwithquality(waveform, breathlist, Fs):
             thecolor = color_bad
         startpt = int(breathlist[thisbreath]["starttime"] * Fs)
         endpt = int(breathlist[thisbreath]["endtime"] * Fs)
-        if endpt == len(waveform) - 1:
-            endpt -= 1
-        xvals = np.linspace(
-            startpt / Fs, (endpt + 1) / Fs, endpt - startpt + 1, endpoint=False
-        )
-        yvals = waveform[startpt : endpt + 1]
-        plt.plot(xvals, yvals, color=thecolor)
+        if plottype == "rectangle":
+            therectangle = Polygon(((breathlist[thisbreath]["starttime"], ymin),
+                                    (breathlist[thisbreath]["starttime"], ymax),
+                                    (breathlist[thisbreath]["endtime"], ymax),
+                                    (breathlist[thisbreath]["endtime"], ymin)),
+                                    fc=thecolor, ec=thecolor, lw=0)
+            ax.add_patch(therectangle)
+            pass
+        else:
+            if endpt == len(waveform) - 1:
+                endpt -= 1
+            xvals = np.linspace(
+                startpt / Fs, (endpt + 1) / Fs, endpt - startpt + 1, endpoint=False
+            )
+            yvals = waveform[startpt : endpt + 1]
+            plt.plot(xvals, yvals, color=thecolor)
+    plt.ylim([ymin, ymax])
     plt.title("Respiratory waveform, color coded by quantifiability")
     plt.xlabel("Time in seconds")
     plt.ylabel("Amplitude (arbitrary units)")
