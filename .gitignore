@@ -138,3 +138,7 @@ dmypy.json
 .DS_Store
 */.DS_Store
 */*/.DS_Store
+
+# image files
+testdata/*.png
+testdata/*.jpg
